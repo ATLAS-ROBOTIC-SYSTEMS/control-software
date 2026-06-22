@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATLAS - CONTROLL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<style>
+    * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0d0d0f;
+    color: #e8e6e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+    gap: 1.5rem;
+}
+
+h1 {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888780;
+}
+
+/* Toggle */
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: #1a1a1f;
+    border: 0.5px solid #2c2c2a;
+    border-radius: 10px;
+    padding: 0.75rem 1.25rem;
+}
+
+.toggle-label {
+    font-size: 13px;
+    color: #888780;
+    letter-spacing: 0.04em;
+}
+
+.toggle-label.active {
+    color: #e8e6e0;
+}
+
+.toggle-switch {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    cursor: pointer;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-track {
+    position: absolute;
+    inset: 0;
+    background: #3c3489;
+    border-radius: 13px;
+    transition: background 0.25s;
+}
+
+.toggle-switch input:checked~.toggle-track {
+    background: #2c2c2a;
+}
+
+.toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background: #e8e6e0;
+    border-radius: 50%;
+    transition: transform 0.25s;
+}
+
+.toggle-switch input:checked~.toggle-knob {
+    transform: translateX(22px);
+}
+
+/* Status badge */
+.status-badge {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: #26215c;
+    color: #afa9ec;
+    transition: all 0.25s;
+}
+
+.status-badge.controller {
+    background: #2c2c2a;
+    color: #888780;
+}
+
+/* Joystick */
+.joystick-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    opacity: 1;
+    transition: opacity 0.3s;
+}
+
+.joystick-wrap.disabled {
+    opacity: 0.25;
+    pointer-events: none;
+}
+
+#joystick-canvas {
+    touch-action: none;
+    cursor: crosshair;
+    border-radius: 50%;
+    display: block;
+}
+
+/* Value readout */
+.readout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 240px;
+}
+
+.readout-card {
+    background: #1a1a1f;
+    border: 0.5px solid #2c2c2a;
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    text-align: center;
+}
+
+.readout-label {
+    font-size: 11px;
+    color: #888780;
+    letter-spacing: 0.06em;
+    margin-bottom: 2px;
+}
+
+.readout-val {
+    font-size: 20px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: #afa9ec;
+}
+
+.readout-card.polar .readout-val {
+    color: #5dcaa5;
+}
+</style>
+
+
+<body>
+
+  <h2>ATLAS</h2>
+  <h1>Autonomous Trash Littering System</h1>
+
+  <div class="toggle-row">
+    <span class="toggle-label" id="lbl-web">Web</span>
+    <label class="toggle-switch" title="Switch input source">
+      <input type="checkbox" id="src-toggle" checked />
+      <span class="toggle-track"></span>
+      <span class="toggle-knob"></span>
+    </label>
+    <span class="toggle-label active" id="lbl-ctrl">Remote Controll</span>
+    <span class="status-badge controller" id="status-badge">Remote Controll</span>
+  </div>
+
+  <div class="joystick-wrap disabled" id="joy-wrap">
+    <canvas id="joystick-canvas" width="240" height="240"></canvas>
+  </div>
+
+
+
+ <script>
+
+const canvas = document.getElementById('joystick-canvas');
+const ctx = canvas.getContext('2d');
+const toggle = document.getElementById('src-toggle');
+const joyWrap = document.getElementById('joy-wrap');
+const badge = document.getElementById('status-badge');
+const lblWeb = document.getElementById('lbl-web');
+const lblCtrl = document.getElementById('lbl-ctrl');
+
+const W = canvas.width, H = canvas.height;
+const CX = W / 2, CY = H / 2;
+const OUTER_R = 108, KNOB_R = 28;
+
+let joyX = 0, joyY = 0;
+let dragging = false;
+let sendInterval = null;
+
+function drawJoystick() {
+    ctx.clearRect(0, 0, W, H);
+
+    // Outer ring
+    ctx.beginPath();
+    ctx.arc(CX, CY, OUTER_R, 0, Math.PI * 2);
+    ctx.strokeStyle = '#2c2c2a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Cross hairs
+    ctx.strokeStyle = '#2c2c2a';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(CX, CY - OUTER_R + 8); ctx.lineTo(CX, CY + OUTER_R - 8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(CX - OUTER_R + 8, CY); ctx.lineTo(CX + OUTER_R - 8, CY); ctx.stroke();
+
+    // Dead-zone ring
+    ctx.beginPath();
+    ctx.arc(CX, CY, OUTER_R * 0.08, 0, Math.PI * 2);
+    ctx.strokeStyle = '#3c3489';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // Knob position
+    const kx = CX + joyX * OUTER_R;
+    const ky = CY - joyY * OUTER_R;
+
+    // Line from center
+    ctx.beginPath();
+    ctx.moveTo(CX, CY);
+    ctx.lineTo(kx, ky);
+    ctx.strokeStyle = '#534ab7';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Knob fill
+    ctx.beginPath();
+    ctx.arc(kx, ky, KNOB_R, 0, Math.PI * 2);
+    ctx.fillStyle = dragging ? '#534ab7' : '#3c3489';
+    ctx.fill();
+
+    // Knob border
+    ctx.beginPath();
+    ctx.arc(kx, ky, KNOB_R, 0, Math.PI * 2);
+    ctx.strokeStyle = dragging ? '#afa9ec' : '#7f77dd';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+}
+
+
+
+function pointerToJoy(e) {
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width * W;
+    const py = (e.clientY - rect.top) / rect.height * H;
+    let dx = (px - CX) / OUTER_R;
+    let dy = -(py - CY) / OUTER_R;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > 1) { dx /= dist; dy /= dist; }
+    joyX = dx; joyY = dy;
+}
+
+canvas.addEventListener('pointerdown', e => {
+    if (toggle.checked) return; // controller mode
+    dragging = true;
+    canvas.setPointerCapture(e.pointerId);
+    pointerToJoy(e);
+    drawJoystick();  sendJoy();
+});
+canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    pointerToJoy(e);
+    drawJoystick(); 
+});
+canvas.addEventListener('pointerup', () => {
+    dragging = false;
+    joyX = 0; joyY = 0;
+    drawJoystick(); sendJoy();
+});
+
+function sendJoy() {
+    fetch(`/joy?x=${joyX.toFixed(4)}&y=${joyY.toFixed(4)}`).catch(() => { });
+}
+
+
+setInterval(() => {
+    if (dragging && !toggle.checked) sendJoy();
+}, 50);
+
+
+function syncStatus() {
+    fetch('/status')
+        .then(r => r.json())
+        .then(d => {
+            if (d.useController !== toggle.checked) {
+                toggle.checked = d.useController;
+                applyToggle();
+            }
+        })
+        .catch(() => { });
+}
+setInterval(syncStatus, 1000);
+
+function applyToggle() {
+    const useCtrl = toggle.checked;
+    badge.textContent = useCtrl ? 'Controller' : 'Web';
+    badge.className = 'status-badge' + (useCtrl ? ' controller' : '');
+    joyWrap.classList.toggle('disabled', useCtrl);
+    lblWeb.classList.toggle('active', !useCtrl);
+    lblCtrl.classList.toggle('active', useCtrl);
+    if (!useCtrl && !dragging) { joyX = 0; joyY = 0; drawJoystick(); }
+}
+
+toggle.addEventListener('change', () => {
+    fetch(`/set_source?ctrl=${toggle.checked ? 1 : 0}`).catch(() => { });
+    applyToggle();
+});
+
+applyToggle();
+drawJoystick();
+ </script>
+
+
+ <footer style="font-size: 11px; color: #444441; letter-spacing: 0.04em; margin-top: 1rem;">
+  Samuel Findenig &nbsp;·&nbsp; Moritz Heinzle &nbsp;·&nbsp; Oskar Rotman
+</footer>
+
+</body>
+
+</html>
